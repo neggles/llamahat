@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    "charliermarsh.ruff",
+    "editorconfig.editorconfig",
+    "elagil.pre-commit-helper",
+    "esbenp.prettier-vscode",
+    "foxundermoon.shell-format",
+    "ms-python.black-formatter",
+    "ms-python.python",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "xaver.clang-format"
+  ],
+  "unwantedRecommendations": ["ms-python.flake8", "ms-python.pylint"]
+}

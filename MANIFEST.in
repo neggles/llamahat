@@ -1,0 +1,6 @@
+# setuptools_scm will grab all tracked files, minus these exclusions,
+# so we only need to exclude tracked files we don't want in an sdist
+prune .vscode
+prune .github
+
+global-exclude *~ *.py[cod] *.so
