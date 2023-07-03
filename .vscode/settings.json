@@ -1,8 +1,52 @@
 {
+    "files.trimTrailingWhitespace": true,
+    "files.associations": {
+        ".clang-format": "yaml",
+        ".config": "shellscript",
+        ".gitignore": "ignore",
+        ".vscode/*.json": "jsonc",
+        "*.config": "makefile",
+        "*.cwaps1": "powershell",
+        "*.dts": "dts",
+        "*.dtsi": "dts",
+        "*.html": "html",
+        "*.scc": "makefile",
+        "*.sh.tmpl": "jinja-shell",
+        "*.txt": "plaintext",
+        "**/.ssh/*": "ssh_config",
+        "requirements*.txt": "pip-requirements",
+        "setup.cfg": "ini",
+        "ssh_config": "ssh_config",
+        "cstdint": "cpp",
+        "__config": "cpp",
+        "cstdio": "cpp"
+    },
+
     "editor.insertSpaces": true,
     "editor.tabSize": 4,
-    "files.trimTrailingWhitespace": true,
     "editor.rulers": [100, 120],
+
+    "C_Cpp.default.cStandard": "c11",
+    "C_Cpp.default.cppStandard": "c++11",
+    "C_Cpp.clang_format_style": "file",
+    "C_Cpp.clang_format_sortIncludes": true,
+    "C_Cpp.loggingLevel": "Information",
+
+    "[c]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnSaveMode": "file",
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[cpp]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnSaveMode": "file",
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[cuda-cpp]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnSaveMode": "file",
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
 
     "[python]": {
         "editor.wordBasedSuggestions": false,
@@ -13,6 +57,10 @@
         }
     },
     "python.analysis.include": ["./src", "./scripts", "./tests"],
+    "terminal.integrated.env.linux": {
+        "CUDA_HOME": "/usr/local/cuda",
+        "PATH": "/usr/local/cuda/bin:${env:PATH}"
+    },
 
     "python.formatting.provider": "none",
     "black-formatter.args": [
@@ -57,5 +105,6 @@
     },
 
     "remote.autoForwardPorts": false,
-    "remote.autoForwardPortsSource": "process"
+    "remote.autoForwardPortsSource": "process",
+    "C_Cpp.default.compilerPath": "/usr/bin/clang-15"
 }

@@ -3,4 +3,7 @@
 prune .vscode
 prune .github
 
+# include this to allow for texting
+recursive-include csrc *.c *.h *.cpp *.hpp *.cu *.cuh
+
 global-exclude *~ *.py[cod] *.so
