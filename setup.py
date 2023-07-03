@@ -6,10 +6,9 @@ from pathlib import Path
 
 import setuptools
 import torch
-from packaging.version import Version, parse
-from torch import version as torch_version
+from packaging.version import Version
 from torch.utils import cpp_extension as cext
-from torch.utils.cpp_extension import CUDA_HOME, IS_HIP_EXTENSION, IS_WINDOWS, BuildExtension, CUDAExtension
+from torch.utils.cpp_extension import CUDA_HOME, IS_HIP_EXTENSION, BuildExtension, CUDAExtension
 
 DEF_ARCH_LIST = "7.0;7.5;8.0;8.6;8.9;9.0+PTX"
 
@@ -25,7 +24,7 @@ def get_cuda_bare_metal_version(cuda_dir) -> tuple[str, Version]:
     raw_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"], universal_newlines=True)
     output = raw_output.split()
     release_idx = output.index("release") + 1
-    bare_metal_version = parse(output[release_idx].split(",")[0])
+    bare_metal_version = Version(output[release_idx].split(",")[0])
 
     return raw_output, bare_metal_version
 
@@ -91,13 +90,13 @@ def get_cext_sources():
     ]
     if len(sources) == 0:
         raise RuntimeError(f"Could not find any source files in {workdir}/csrc")
-    return [str(x) for x in sources]
+    return sorted([str(x) for x in sources])
 
 
 setuptools.setup(
     ext_modules=[
         CUDAExtension(
-            name="llamahat.cuda",
+            name="llamahat.cext",
             sources=get_cext_sources(),
             include_dirs=C_INCLUDE_DIRS,
             extra_compile_args={

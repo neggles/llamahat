@@ -162,7 +162,9 @@ void rms_norm_cuda(
     dim3 threads(THREADS_X, THREADS_Y, 1);
 
     dim3 blocks(
-        (dim + THREADS_X - 1) / THREADS_X / BLOCKSIZE_X, (rows + THREADS_Y - 1) / THREADS_Y, 1
+        ((dim + THREADS_X - 1) / THREADS_X + THREADS_X - 1) / BLOCKSIZE_X,
+        (rows + THREADS_Y - 1) / THREADS_Y,
+        1
     );
 
     // cudaMemsetAsync(temp, 0, rows * sizeof(float));

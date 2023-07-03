@@ -8,10 +8,10 @@ using namespace std;
 
 const int UNSHUF_BLOCKSIZE_X = 64;
 
-const int RECONS_THREADS_X =
-    64; // Block size and thread count along columns in out, each thread converts 1 column
-const int RECONS_THREADS_Y =
-    1; // Block size and thread count along rows in x and out, each thread converts 8 rows
+// Block size and thread count along columns in out, each thread converts 1 column
+const int RECONS_THREADS_X = 64;
+// Block size and thread count along rows in x and out, each thread converts 8 rows
+const int RECONS_THREADS_Y = 1;
 
 vector<Q4Matrix*> g_q4_matrices;
 
@@ -52,7 +52,6 @@ Q4Matrix::Q4Matrix(
 Q4Matrix::~Q4Matrix() {}
 
 // Make sequential
-
 __global__ void make_sequential_kernel(
     const uint32_t* __restrict__ w,
     uint32_t* __restrict__ w_new,
@@ -64,12 +63,15 @@ __global__ void make_sequential_kernel(
     uint64_t*       w_new2    = (uint64_t*)w_new;
     int             w2_stride = w_width >> 1;
 
-    int w2_column  = UNSHUF_BLOCKSIZE_X * blockIdx.x + threadIdx.x;
+    int w2_column = UNSHUF_BLOCKSIZE_X * blockIdx.x + threadIdx.x;
+    if (w2_column >= w2_stride) return;
+
     int w_new2_row = blockIdx.y;
 
     int x_map_idx = w_new2_row << 3;
 
     uint64_t dst = 0;
+
 
 #pragma unroll
     for (int i = 0; i < 8; i++) {
@@ -93,21 +95,18 @@ __global__ void make_sequential_kernel(
 void Q4Matrix::make_sequential(const uint32_t* cpu_g_idx) {
     uint32_t* cuda_new_qweight = NULL;
     cudaMalloc(&cuda_new_qweight, height / 8 * width * sizeof(uint32_t));
-    cudaMalloc(
-        &cuda_x_map, height * sizeof(uint32_t)
-    ); // TODO: Should probably be allocated in PyTorch
+    // TODO: Should probably be allocated in PyTorch
+    cudaMalloc(&cuda_x_map, height * sizeof(uint32_t));
 
     uint32_t* cpu_g_idx_map = (uint32_t*)calloc(groups, sizeof(uint32_t));
     uint32_t* cpu_x_map     = (uint32_t*)malloc(height * sizeof(uint32_t));
     uint32_t* cpu_x_map_inv = (uint32_t*)malloc(height * sizeof(uint32_t));
 
     // Group histogram
-
     for (int i = 0; i < height; i++)
         cpu_g_idx_map[cpu_g_idx[i]]++;
 
     // Group map
-
     for (int i = 0, acc = 0; i < groups; i++) {
         short tmp        = cpu_g_idx_map[i];
         cpu_g_idx_map[i] = acc;
@@ -115,7 +114,6 @@ void Q4Matrix::make_sequential(const uint32_t* cpu_g_idx) {
     }
 
     // X map (inverse)
-
     for (int row = 0; row < height; row++) {
         uint32_t target_group = cpu_g_idx[row];
         uint32_t target_row   = cpu_g_idx_map[target_group];
@@ -124,25 +122,21 @@ void Q4Matrix::make_sequential(const uint32_t* cpu_g_idx) {
     }
 
     // X map
-
     for (int row = 0; row < height; row++)
         cpu_x_map[cpu_x_map_inv[row]] = row;
 
     // Move to CUDA
-
     cudaMemcpyAsync(cuda_x_map, cpu_x_map, height * sizeof(uint32_t), cudaMemcpyHostToDevice);
 
     // Rearrange rows in w
-
     dim3 threads(UNSHUF_BLOCKSIZE_X, 1, 1);
-    dim3 blocks(width / UNSHUF_BLOCKSIZE_X / 2, height / 8, 1);
+    dim3 blocks((width + UNSHUF_BLOCKSIZE_X * 2 - 1) / (UNSHUF_BLOCKSIZE_X * 2), height / 8, 1);
 
     make_sequential_kernel<<<blocks, threads>>>(
         cuda_qweight, cuda_new_qweight, cuda_x_map, height / 8, width
     );
 
-    // Replace qweights
-
+    // Replace qweight
     cudaMemcpyAsync(
         cuda_qweight,
         cuda_new_qweight,
@@ -151,7 +145,6 @@ void Q4Matrix::make_sequential(const uint32_t* cpu_g_idx) {
     );
 
     // Cleanup
-
     cudaDeviceSynchronize();
     cudaFree(cuda_new_qweight);
     free(cpu_g_idx_map);
@@ -169,19 +162,17 @@ __global__ void reconstruct_kernel(
     const int groupsize
 ) {
     // Start of block
-
     int column = RECONS_THREADS_X * blockIdx.x + threadIdx.x;
     int row    = (RECONS_THREADS_Y * blockIdx.y + threadIdx.y) * 8;
+    if (column >= width) return;
 
     // Views
-
     MatrixView_q4_column w_(w, height, width);
     MatrixView_half_rw   out_(out, height, width);
     MatrixView_half      w_scales_(w_scales, height / groupsize, width);
     MatrixView_q4_row    w_zeros_(w_zeros, height / groupsize, width);
 
     // Groupsize version
-
     int group = row / groupsize;
 
     half     w_scale = w_scales_.item(group, column);

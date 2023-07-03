@@ -19,7 +19,11 @@
         "ssh_config": "ssh_config",
         "cstdint": "cpp",
         "__config": "cpp",
-        "cstdio": "cpp"
+        "cstdio": "cpp",
+        "ratio": "cpp",
+        "locale": "cpp",
+        "type_traits": "cpp",
+        "complex": "cpp"
     },
 
     "editor.insertSpaces": true,

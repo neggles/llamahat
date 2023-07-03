@@ -2,6 +2,7 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
 #include <torch/extension.h>
 
 #include <cstdint>
@@ -47,33 +48,35 @@ void check_cuda(cudaError_t ret) {
 
 #define STRINGIFY_(__x) #__x
 #define STRINGIFY(__x)  STRINGIFY_(__x)
-#define TORCH_CHECK_DTYPE(__x, __dtype) \
-    TORCH_CHECK((__x).dtype() == torch::__dtype, #__x " is incorrect datatype, must be " #__dtype)
+#define TORCH_CHECK_DTYPE(__x, __dtype)                                                   \
+    TORCH_CHECK_TYPE(                                                                     \
+        (__x).dtype() == torch::__dtype, #__x " is incorrect datatype, must be " #__dtype \
+    )
 #define TORCH_CHECK_DTYPE_OPT(__x, __dtype)                          \
-    TORCH_CHECK(                                                     \
+    TORCH_CHECK_TYPE(                                                \
         (__x).device().is_meta() || (__x).dtype() == torch::__dtype, \
         #__x " is incorrect datatype, must be " #__dtype             \
     )
 #define TORCH_CHECK_SHAPES(__x, __dim_x, __y, __dim_y, __scale_y) \
-    TORCH_CHECK(                                                  \
+    TORCH_CHECK_VALUE(                                            \
         (__x).size(__dim_x) == (__y).size(__dim_y) * __scale_y,   \
         #__x " and " #__y " have incompatible shapes"             \
     )
 #define TORCH_CHECK_SHAPES_OPT(__x, __dim_x, __y, __dim_y, __scale_y)                       \
-    TORCH_CHECK(                                                                            \
+    TORCH_CHECK_VALUE(                                                                      \
         (__x).device().is_meta() || (__x).size(__dim_x) == (__y).size(__dim_y) * __scale_y, \
         #__x " and " #__y " have incompatible shapes"                                       \
     )
 #define TORCH_CHECK_SHAPE_MOD(__x, __dim_x, __mod)                                    \
-    TORCH_CHECK(                                                                      \
+    TORCH_CHECK_VALUE(                                                                \
         (__x).size(__dim_x) % __mod == 0,                                             \
         #__x ".shape[" STRINGIFY(__dim_x) "] must be a multiple of " STRINGIFY(__mod) \
     )
 
-#define TORCH_CHECK_DEVICE_INDEX(__index)                                \
-    do {                                                                 \
-        TORCH_CHECK(__index >= 0, "no device index");                    \
-        TORCH_CHECK(__index < CUDA_MAX_DEVICES, "invalid device index"); \
+#define TORCH_CHECK_DEVICE_INDEX(__index)                                      \
+    do {                                                                       \
+        TORCH_CHECK_INDEX(__index >= 0, "no device index");                    \
+        TORCH_CHECK_INDEX(__index < CUDA_MAX_DEVICES, "invalid device index"); \
     } while (0)
 
 #define TORCH_CHECK_QUANT(__w, __w_scales, __w_zeros, __seq_g_idx, __x_map) \
@@ -641,21 +644,184 @@ void apply_rep_penalty(
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("set_tuning_params", &set_tuning_params, "set_tuning_params");
-    m.def("prepare_buffers", &prepare_buffers, "prepare_buffers");
-    m.def("cleanup", &cleanup, "cleanup");
-    m.def("make_q4", &make_q4, "make_q4");
-    m.def("q4_matmul", &q4_matmul, "q4_matmul");
-    m.def("q4_matmul_lora", &q4_matmul_lora, "q4_matmul_lora");
-    m.def("q4_attn", &q4_attn, "q4_attn");
-    m.def("q4_attn_2", &q4_attn_2, "q4_attn_2");
-    m.def("q4_mlp", &q4_mlp, "q4_mlp");
-    m.def("column_remap", &column_remap, "column_remap");
-    m.def("rms_norm", &rms_norm, "rms_norm");
-    m.def("rope_", &rope_, "rope_");
-    m.def("half_matmul", &half_matmul, "half_matmul");
-    m.def("half_matmul_cublas", &half_matmul_cublas, "half_matmul_cublas");
+    using namespace pybind11::literals;
+    m.def(
+        "set_tuning_params",
+        &set_tuning_params,
+        "Set tuning parameters in the C++ extension",
+        py::arg("matmul_recons_thd"),
+        py::arg("fused_mlp_thd"),
+        py::arg("sdp_thd"),
+        py::arg("matmul_fused_remap"),
+        py::arg("rmsnorm_no_half2"),
+        py::arg("rope_no_half2"),
+        py::arg("matmul_no_half2"),
+        py::arg("silu_no_half2"),
+        py::arg("concurrent_streams")
+    );
+    m.def(
+        "prepare_buffers",
+        &prepare_buffers,
+        "Prepare buffers for forward pass",
+        py::arg("device"),
+        py::arg("temp_state"),
+        py::arg("temp_mlp"),
+        py::arg("temp_zeros_float"),
+        py::arg("temp_dq")
+    );
+    m.def("cleanup", &cleanup, "Release all unmanaged objects allocated by the extension");
+    m.def(
+        "make_q4",
+        &make_q4,
+        "Create Q4Matrix, return handle",
+        py::arg("qweight"),
+        py::arg("qzeros"),
+        py::arg("scales"),
+        py::arg("g_idx"),
+        py::arg("device")
+    );
+    m.def(
+        "q4_matmul",
+        &q4_matmul,
+        "Matmul half @ quant -> half",
+        py::arg("x"),
+        py::arg("w"),
+        py::arg("out")
+    );
+    m.def(
+        "q4_matmul_lora",
+        &q4_matmul_lora,
+        "Matmul half @ quant + half @ half @ half -> half. Same as q4_matmul, "
+        "but adds (x @ lora_A) @ lora_B to the result",
+        py::arg("x"),
+        py::arg("w"),
+        py::arg("out"),
+        py::arg("lora_A"),
+        py::arg("lora_B"),
+        py::arg("lora_temp")
+    );
+    m.def(
+        "q4_attn",
+        &q4_attn,
+        "LLaMA self attention (WIP)",
+        py::arg("x"),
+        py::arg("rms_norm_weight"),
+        py::arg("epsilon"),
+        py::arg("query_states"),
+        py::arg("key_states"),
+        py::arg("value_states"),
+        py::arg("q_proj"),
+        py::arg("k_proj"),
+        py::arg("v_proj"),
+        py::arg("sin"),
+        py::arg("cos"),
+        py::arg("q_len"),
+        py::arg("past_len"),
+        py::arg("num_heads"),
+        py::arg("head_dim"),
+        py::arg("key_cache"),
+        py::arg("value_cache"),
+        py::arg("max_seq_len"),
+        py::arg("q_a"),
+        py::arg("q_b"),
+        py::arg("k_a"),
+        py::arg("k_b"),
+        py::arg("v_a"),
+        py::arg("v_b"),
+        py::arg("lora_temp")
+    );
+    m.def(
+        "q4_attn_2",
+        &q4_attn_2,
+        "int4 quantized LLaMA self attention (WIP, 2nd version)",
+        py::arg("x"),
+        py::arg("attn_output"),
+        py::arg("o_proj"),
+        py::arg("o_a"),
+        py::arg("o_b"),
+        py::arg("lora_temp")
+    );
+    m.def(
+        "q4_mlp",
+        &q4_mlp,
+        "int4 quantized LLaMA mlp",
+        py::arg("x"),
+        py::arg("rms_norm_weight"),
+        py::arg("epsilon"),
+        py::arg("gate"),
+        py::arg("up"),
+        py::arg("down"),
+        py::arg("gate_a"),
+        py::arg("gate_b"),
+        py::arg("up_a"),
+        py::arg("up_b"),
+        py::arg("down_a"),
+        py::arg("down_b"),
+        py::arg("lora_temp")
+    );
+    m.def(
+        "column_remap",
+        &column_remap,
+        "Column remap for half-precision tensor",
+        py::arg("x"),
+        py::arg("x_new"),
+        py::arg("x_map")
+    );
+    m.def(
+        "rms_norm",
+        &rms_norm,
+        "RMS layernorm",
+        py::arg("x"),
+        py::arg("w"),
+        py::arg("out"),
+        py::arg("epsilon")
+    );
+    m.def(
+        "rope_",
+        &rope_,
+        "RoPE rotary positional embeddings",
+        py::arg("x"),
+        py::arg("sin"),
+        py::arg("cos"),
+        py::arg("past_len"),
+        py::arg("num_heads"),
+        py::arg("head_dim")
+    );
+    m.def(
+        "half_matmul",
+        &half_matmul,
+        "Matmul half @ half -> half, custom kernel",
+        py::arg("x"),
+        py::arg("w"),
+        py::arg("out")
+    );
+    m.def(
+        "half_matmul_cublas",
+        &half_matmul_cublas,
+        "Matmul half @ half -> half using cuBLAS",
+        py::arg("x"),
+        py::arg("w"),
+        py::arg("out")
+    );
 
-    m.def("rep_penalty", &rep_penalty, "rep_penalty");
-    m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
+    m.def(
+        "rep_penalty",
+        &rep_penalty,
+        "Repetition penalty",
+        py::arg("sequence"),
+        py::arg("rep_mask"),
+        py::arg("penalty_max"),
+        py::arg("sustain"),
+        py::arg("decay")
+    );
+    m.def(
+        "apply_rep_penalty",
+        &apply_rep_penalty,
+        "Apply repetition penalty",
+        py::arg("sequence"),
+        py::arg("penalty_max"),
+        py::arg("sustain"),
+        py::arg("decay"),
+        py::arg("logits")
+    );
 }

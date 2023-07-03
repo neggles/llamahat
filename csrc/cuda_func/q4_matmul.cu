@@ -5,10 +5,6 @@
 #include "matrix.cuh"
 #include "util.cuh"
 
-#if defined(USE_ROCM)
-#    include "hip_compat.cuh"
-#endif
-
 const int THREADS_X = 32; // Block size and thread count along columns in w and out
 const int THREADS_Y = 1;  // Block size and thread count along rows in x and out
 
@@ -46,8 +42,9 @@ __global__ void q4_matmul_kernel(
     int x_column     = block_size_z * blockIdx.z;
     int x_column_end = min(dim, block_size_z * (blockIdx.z + 1));
 
-    int w_column = THREADS_X * blockIdx.x + threadIdx.x;
-    int x_row    = THREADS_Y * blockIdx.y + threadIdx.y;
+    int w_column = THREADS_X * blockIdx.x +
+                   threadIdx.x; // assume width of weight matrix divisible by THREADS_X (32)
+    int x_row = THREADS_Y * blockIdx.y + threadIdx.y;
 
     int iterations = (x_column_end - x_column) / 8;
 
@@ -273,6 +270,32 @@ void q4_matmul_recons_cuda(
 
     w->reconstruct(buffers->temp_dq);
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 700
+
+    const float alpha = 1.0f;
+    const float beta  = no_zero ? 1.0f : 0.0f;
+    cublasSgemmEx(
+        handle,
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        width,
+        height,
+        dim,
+        &alpha,
+        buffers->temp_dq,
+        CUDA_R_16F,
+        width,
+        x_mapped,
+        CUDA_R_16F,
+        dim,
+        &beta,
+        out,
+        CUDA_R_16F,
+        width
+    );
+
+#else
+
     const half alpha = __float2half(1.0f);
     const half beta  = no_zero ? __float2half(1.0f) : __float2half(0.0f);
     cublasHgemm(
@@ -292,9 +315,5 @@ void q4_matmul_recons_cuda(
         width
     );
 
-    //     const float alpha = 1.0f;
-    //     const float beta = no_zero ? 1.0f : 0.0f;
-    //     cublasSgemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, width, height, dim, &alpha,
-    //     buffers->temp_dq, CUDA_R_16F, width,
-    //                 x_mapped, CUDA_R_16F, dim, &beta, out, CUDA_R_16F, width);
+#endif
 }
